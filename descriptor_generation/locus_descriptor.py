@@ -7,12 +7,15 @@ from sklearn.preprocessing import normalize
 from spatial_pooling import *
 from temporal_pooling import *
 
+# config_dict
 def get_locus_descriptor(idx, config_dict, database_dict):
 
     features = database_dict['features_database'][idx]
+    # 最后生成的特征维度是64维
     feature_dim = 64 #np.shape(features)[1]
 
     # Get spatially and temporally pooled features. 
+    # 分别获得空间池化和时间池化的特征
     spatial_features = get_spatial_features(
         idx, config_dict['spatial_topk'], database_dict)
     temporal_features = get_temporal_features(

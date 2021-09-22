@@ -13,8 +13,9 @@ from utils.misc_utils import *
 def get_segment_MTD(segments, topk):
     """ Topological relationships based on Minimum Translational Distance (MTD)"""
     """ Returns IDs and distances to nearest segments for all segments"""
-
+    # 获得基于最小平移距离的拓扑关系
     # Compute convex hulls of segments
+    # 获得段特征的点云凸包
     hulls = []
     for segment in segments:
         pcd = o3d.geometry.PointCloud()
@@ -23,6 +24,7 @@ def get_segment_MTD(segments, topk):
         hulls.append(np.asarray(hull.vertices))
 
     # Calculate MTDs between all segments
+    # 根据上凸包计算各个点云段之间的最小平移距离
     num_points = len(segments)
     dist_mat = np.zeros((num_points, num_points))
     for j in range(num_points):
@@ -36,6 +38,7 @@ def get_segment_MTD(segments, topk):
             dist_mat[k][j] = dist
 
     # Find 'topk' closest segments for each segment
+    # 寻找距离最近的k个点云段
     min_dists = []
     min_dist_ids = []
     for s in range(num_points):
@@ -49,22 +52,24 @@ def get_segment_MTD(segments, topk):
 def get_spatial_features(idx, topk, database_dict):
     """ Return the pooled feature using topological relationships """
 
-    features = database_dict['features_database'][idx]
-    segments = database_dict['segments_database'][idx]
+    features = database_dict['features_database'][idx]  # SegMap提取后的点云段特征
+    segments = database_dict['segments_database'][idx]  # 基于欧式聚类提取的点云段
 
     if len(features) < 7:
         return []
-
+    # 获得段之间的距离，以及对应距离的点云段序号
     seg_tdists, seg_tdist_ids = get_segment_MTD(segments, topk)
+    # 对段特征进行池化
     pooled_softmax_features = np.zeros((len(features), np.shape(features)[1]))
 
     # For each segment, pool features from related segments
     for c in range(len(segments)):
         dist = seg_tdists[c]
         ind = seg_tdist_ids[c]
+        # 计算softmax
         exp_dists = np.exp(-0.1*dist)
         exp_dists /= np.sum(exp_dists)
-
+        #  用k个最近邻去进行加权平均
         for nn_idx in range(min(topk, len(ind))):
             f_vec = features[ind[nn_idx]]
             pooled_softmax_features[c] += exp_dists[nn_idx]*f_vec
