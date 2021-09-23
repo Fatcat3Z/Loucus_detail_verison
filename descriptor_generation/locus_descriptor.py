@@ -15,7 +15,7 @@ def get_locus_descriptor(idx, config_dict, database_dict):
     feature_dim = 64 #np.shape(features)[1]
 
     # Get spatially and temporally pooled features. 
-    # 分别获得空间池化和时间池化的特征
+    # 分别获得空间池化和时间池化的段特征
     spatial_features = get_spatial_features(
         idx, config_dict['spatial_topk'], database_dict)
     temporal_features = get_temporal_features(
@@ -26,13 +26,16 @@ def get_locus_descriptor(idx, config_dict, database_dict):
         return []
 
     # Second order pooling (O2P) of complementary features.
+    # 计算二阶池化特征
     locus_matrix = np.zeros((feature_dim, feature_dim))
     for feature_idx in range(len(features)):
+        # sa_feature 经过SegMap后提取的原始段特征
         sa_feature = np.asarray(features[feature_idx])
         spatial_feature = np.asarray(spatial_features[feature_idx])
         temporal_feature = np.asarray(temporal_features[feature_idx])
+        # 时空池化特征即对空间、时间取平均
         spatiotemporal_feature = (spatial_feature + temporal_feature)/2
-
+        # 与时空池化后的特征进行外积实现二阶池化
         if config_dict['fb_mode'] == 'structural':
             second_order_feature = np.outer(sa_feature, sa_feature)
         elif config_dict['fb_mode'] == 'spatial':
@@ -41,16 +44,18 @@ def get_locus_descriptor(idx, config_dict, database_dict):
             second_order_feature = np.outer(sa_feature, temporal_feature)
         else:
             second_order_feature = np.outer(sa_feature, spatiotemporal_feature)
-
+        # 选取最大值，即最具代表性的段特征
         locus_matrix = np.maximum(locus_matrix, second_order_feature)
 
     # Power Euclidean (PE) non-linear transform.
+    # 提高矩阵的判别性，进行SVD分解，同时进行PE非线性变换，提高特征值
     u_, s_, vh_ = np.linalg.svd(locus_matrix)
     s_alpha = np.power(s_, config_dict['PE_alpha'])
     locus_matrix_PE = np.dot(u_ * s_alpha, vh_)
 
     # Flatten and normalize.
     if config_dict['fb_mode'] == 'structural':
+        # 返回非线性变化后的上三角，并进行归一化
         locus_descriptor = locus_matrix_PE[np.triu_indices(feature_dim)]
         locus_descriptor = locus_descriptor/norm(locus_descriptor)
         descriptor_length = int((feature_dim/2)*(feature_dim+1))
@@ -58,6 +63,7 @@ def get_locus_descriptor(idx, config_dict, database_dict):
     else:
         locus_descriptor = normalize(locus_matrix_PE, norm='l2', axis=1, copy=True, return_norm=False)
         locus_descriptor = locus_descriptor/norm(locus_descriptor)
+        # 将矩阵转化为行，按列的顺序进行连接
         locus_descriptor = np.hstack(locus_descriptor)
         descriptor_length = feature_dim*feature_dim
 
@@ -108,3 +114,4 @@ if __name__ == "__main__":
     save_dir = cfg_params['paths']['save_dir'] + seq
     save_pickle(locus_descriptor_database, save_dir +
                 '/second_order/locus_descriptor_database.pickle')
+
