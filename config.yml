@@ -11,6 +11,11 @@ segmentation:
   enforce_min_seg_count: False # Ensure extraction of a minimum number of segments. 
   min_seg_count: 7 # Minimum number of segments (if above is True).
   visualize: False # Visualize all intermediate steps.
+  visualize_proj: true
+  max_range: 80 # 最远距离 80
+  downcell_size: 0.05 # 体素下采样尺寸
+  num_sector: 900
+  num_ring: 64
 
 descriptor_generation:
   n_frames_max: 3 # Number of frames to consider in temporal pooling.
