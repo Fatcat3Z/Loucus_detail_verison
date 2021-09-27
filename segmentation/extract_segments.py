@@ -9,12 +9,13 @@ import sys
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.kitti_dataloader import visualize_scan_open3d
 from utils.kitti_dataloader import visualiza_scan_clouds
-from utils.kitti_dataloader import range_projection_points
-from utils.kitti_dataloader import range_projection_colorseg
+from utils.projections import range_projection_points
+from utils.projections import range_projection_colorseg
+from utils.projections import ScanContext
+from utils.projections import gen_normal_map
 
 # 提取欧几里德点云簇
 def extract_cluster_indices(cloud_filtered, seg_params):
@@ -124,8 +125,9 @@ def extract_segments(scan, seg_params):
 
     proj_range_seg, _, color_segmets, _ = range_projection_colorseg(point_with_color_database)
     proj_range_raw, _, _ = range_projection_points(points_raw)
+    scanproj = ScanContext(points_database, seg_params)
 
-    fig, axs = plt.subplots(3, figsize=(6, 4))
+    fig, axs = plt.subplots(4, figsize=(6, 4))
     axs[0].set_title('range_data_raw')
     axs[0].imshow(proj_range_raw)
     axs[0].set_axis_off()
@@ -137,6 +139,10 @@ def extract_segments(scan, seg_params):
     axs[2].set_title('range_data_segments_colored')
     axs[2].imshow(color_segmets)
     axs[2].set_axis_off()
+
+    axs[3].set_title('ScanContext')
+    axs[3].imshow(scanproj.scancontexts)
+    axs[3].set_axis_off()
 
     plt.suptitle('Difference between raw and segments data')
     plt.show()
@@ -192,17 +198,18 @@ def extract_segments_2d(scan, seg_params):
     else:
         cloud_filtered = pcl.PointCloud(crop_xyz)
 
-    if seg_params['visualize']:
-        visualize_scan_open3d(cloud_filtered, 'filtered cloud')
+    # if seg_params['visualize']:
+    #     visualize_scan_open3d(cloud_filtered, 'filtered cloud')
 
     # Euclidean Cluster Extraction
     cluster_indices = extract_cluster_indices(cloud_filtered, seg_params)
 
     if seg_params['visualize']:
         print('cluster_indices : ', np.shape(cluster_indices))
-
+    segments = []
     points_database = []
     colours_database = []
+    depth_database = []
     centroid_database = []
     init = False
     #
@@ -222,59 +229,83 @@ def extract_segments_2d(scan, seg_params):
         # 分割出的段就是扁平的面
         #
         if (not seg_params['filter_flat_seg']) or (max(x_diff, y_diff) / z_diff < seg_params['horizontal_ratio']):
-            # ji suan mei ge duan de zhi xin
+            # 计算每个段的质心
+            segments.append(points)
             centroid = np.mean(points, axis=0)
             depth = np.linalg.norm(centroid, 2)
             depth = depth[(depth > 0) & (depth < 50)]
             depth = np.array([depth])
-            colour = np.random.random_sample((1))
+
+            # colour = np.random.random_sample((1))
             if init:
                 # vstack 按行串联数组
                 points_database = np.vstack((points_database, points))
-                colour = np.tile(colour, (len(indices), 1))
-                colours_database = np.vstack((colours_database, colour))
+                # colour = np.tile(colour, (len(indices), 1))
+                # colours_database = np.vstack((colours_database, colour))
                 depth = np.tile(depth, (len(indices), 1))
-                centroid_database = np.vstack((centroid_database, depth))
+                depth_database = np.vstack((depth_database, depth))
+                centroid = np.tile(centroid, (len(indices), 1))
+                centroid_database = np.vstack((centroid_database, centroid))
 
             else:
                 points_database = points
-                colour = np.tile(colour, (len(indices), 1))
-                colours_database = colour
+                # colour = np.tile(colour, (len(indices), 1))
+                # colours_database = colour
                 depth = np.tile(depth, (len(indices), 1))
-                centroid_database = depth
+                depth_database = depth
+                centroid = np.tile(centroid, (len(indices), 1))
+                centroid_database = centroid
                 init = True
 
-    point_with_color_database = np.hstack((points_database, colours_database,centroid_database))
+    point_with_color_database = np.hstack((points_database, depth_database, centroid_database))
+    # print("raw-segments:", len(segments))
+    # print(point_with_color_database.size)
+    if seg_params['visualize']:
+        visualize_scan_open3d(points_database, 'seqment clouds', colours_database)
+    if len(segments) > 7:
+        proj_range_seg, proj_vertex, color_segmets, _, proj_centroid_range = \
+            range_projection_colorseg(point_with_color_database, len(segments))
+        proj_range_raw, _, _ = range_projection_points(points_raw)
+        proj_scan_raw = ScanContext(points_raw, seg_params)
+        proj_scan_seg = ScanContext(points_database, seg_params)
+        proj_normal_map = gen_normal_map(proj_range_seg, proj_vertex)
+        # print(proj_normal_map)
+        if seg_params['visualize_proj']:
+            fig, axs = plt.subplots(6, figsize=(6, 4))
+            axs[0].set_title('Raw Data Range Projection')
+            axs[0].imshow(proj_range_raw)
+            axs[0].set_axis_off()
 
-    print(point_with_color_database.size)
-    # if seg_params['visualize']:
-    #     visualize_scan_open3d(points_database, 'seqment clouds', colours_database)
-    #
-    proj_range_seg, _, color_segmets, _, proj_centroid_range = range_projection_colorseg(point_with_color_database)
-    proj_range_raw, _, _ = range_projection_points(points_raw)
-    #
-    fig, axs = plt.subplots(4, figsize=(6, 4))
-    axs[0].set_title('range_data_raw')
-    axs[0].imshow(proj_range_raw)
-    axs[0].set_axis_off()
+            axs[1].set_title('Segments Range Projection')
+            axs[1].imshow(proj_range_seg)
+            axs[1].set_axis_off()
 
-    axs[1].set_title('range_data_segments')
-    axs[1].imshow(proj_range_seg)
-    axs[1].set_axis_off()
+            axs[2].set_title('Spatial Pooling Segments Map')
+            axs[2].imshow(proj_centroid_range)
+            axs[2].set_axis_off()
 
-    axs[2].set_title('range_data_segments_colored')
-    axs[2].imshow(color_segmets)
-    axs[2].set_axis_off()
+            axs[3].set_title('Classed Segments Projection')
+            axs[3].imshow(color_segmets)
+            axs[3].set_axis_off()
 
-    axs[3].set_title('centroid_range_data_segments')
-    axs[3].imshow(proj_centroid_range)
-    axs[3].set_axis_off()
+            axs[4].set_title('Segments Normal Map')
+            axs[4].imshow(proj_normal_map)
+            axs[4].set_axis_off()
 
-    plt.suptitle('Difference between raw and segments data')
-    plt.show()
+            axs[5].set_title('Raw ScanContext')
+            axs[5].imshow(proj_scan_raw.scancontexts)
+            axs[5].set_axis_off()
+
+            # axs[5].set_title('Segments ScanContext')
+            # axs[5].imshow(proj_scan_seg.scancontexts)
+            # axs[5].set_axis_off()
+
+            plt.suptitle('Difference between raw and segments data')
+            plt.show()
 
     # visualiza_scan_clouds(cloud, cloud_filtered, points_database, colours_database)
     return proj_range_raw
+
 
 def get_segments(scan, seg_params):
     segments = extract_segments(scan, seg_params)
@@ -309,10 +340,11 @@ if __name__ == "__main__":
     seg_params = cfg_params['segmentation']
 
     basedir = cfg_params['paths']['KITTI_dataset']
-    sequence_path = basedir + 'sequences/' + seq + '/'
+    # sequence_path = basedir + 'sequences/' + seq + '/'
+    # bin_files = sorted(glob.glob(os.path.join(
+    #     sequence_path, 'velodyne', '*.bin')))
     bin_files = sorted(glob.glob(os.path.join(
-        sequence_path, 'velodyne', '*.bin')))
-
+        basedir, '*.bin')))
     scans = yield_bin_scans(bin_files)
     segments_database = []
 
